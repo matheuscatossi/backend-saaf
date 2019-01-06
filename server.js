@@ -3,8 +3,14 @@ var express = require('express'),
 
 var port = process.env.PORT || 8080
 app.listen(port)
+
 app.use(express.static(__dirname + '/public'))
+
 const sql = require('mssql')
+
+const cors = require('cors')
+app.use(cors())
+app.options('*', cors())
 
 const sqlConfig = {
   user: 'usr_saaf',
@@ -17,41 +23,41 @@ const sqlConfig = {
   }
 }
 
-app.get('/acompanhamentos', function (request, response) {
-  const executeQuery = async function () {
-    return new Promise(function (resolve, reject) {
-      resolve(getAttendance(sql, sqlConfig))
-    })
-  }
-
-  executeQuery().then(function (result) {
-    response.json(result.recordsets)
+app.get('/api/attendances', function (request, response) {
+  executeQueryAttendance().then(function (result) {
+    response.json(result.recordsets[0])
   })
 })
 
-app.get('/funcionarios', function (request, response) {
-  const executeQuery = async function () {
-    return new Promise(function (resolve, reject) {
-      resolve(getEmployees(sql, sqlConfig))
-    })
-  }
+function executeQueryAttendance () {
+  return new Promise(function (resolve, reject) {
+    resolve(getAttendance(sql, sqlConfig))
+  })
+}
 
-  executeQuery().then(function (result) {
-    response.json(result.recordsets)
+app.get('/api/employees', function (request, response) {
+  executeQueryEmployees().then(function (result) {
+    response.json(result.recordsets[0])
   })
 })
 
-app.get('/alunos', function (request, response) {
-  const executeQuery = async function () {
-    return new Promise(function (resolve, reject) {
-      resolve(getStudent(sql, sqlConfig))
-    })
-  }
+function executeQueryEmployees () {
+  return new Promise(function (resolve, reject) {
+    resolve(getEmployees(sql, sqlConfig))
+  })
+}
 
-  executeQuery().then(function (result) {
-    response.json(result.recordsets)
+app.get('/api/students', function (request, response) {
+  executeQueryStudents().then(function (result) {
+    response.json(result.recordsets[0])
   })
 })
+
+function executeQueryStudents () {
+  return new Promise(function (resolve, reject) {
+    resolve(getStudent(sql, sqlConfig))
+  })
+}
 
 require('cf-deployment-tracker-client').track()
 
@@ -63,62 +69,77 @@ function addAttendance (params, sql, sqlConfig) {
   let description = params.description
 
   return new Promise(function (resolve, reject) {
-    resolve(
-      executeQuery(
-        'INSERT INTO ACOMPANHAMENTO (ALUNO, FUNCIONARIO, DATA, DATARETORNO, OBSERVACOES) VALUES (' +
-          student +
-          ' , ' +
-          employees +
-          ", '" +
-          date +
-          "', '" +
-          returnDate +
-          "', '" +
-          description +
-          "');",
-        sql,
-        sqlConfig
-      )
+    executeQuery(
+      'INSERT INTO ACOMPANHAMENTO (ALUNO, FUNCIONARIO, DATA, DATARETORNO, OBSERVACOES) VALUES (' +
+        student +
+        ' , ' +
+        employees +
+        ", '" +
+        date +
+        "', '" +
+        returnDate +
+        "', '" +
+        description +
+        "');",
+      sql,
+      sqlConfig,
+      result => {
+        resolve(result)
+      }
     )
   })
 }
 
 function getAttendance (sql, sqlConfig) {
   return new Promise(function (resolve, reject) {
-    resolve(executeQuery('SELECT * FROM ACOMPANHAMENTO', sql, sqlConfig))
+    executeQuery('SELECT * FROM ACOMPANHAMENTO', sql, sqlConfig, result => {
+      resolve(result)
+    })
   })
 }
 
 function getStudent (sql, sqlConfig) {
   return new Promise(function (resolve, reject) {
-    resolve(
-      executeQuery(
-        'SELECT C.NOME AS NOME, A.ALUNO AS ID FROM PESSOA AS P INNER JOIN CANDIDATO AS C ON C.PESSOA = P.PESSOA INNER JOIN ALUNO AS A ON A.CANDIDATO = C.CANDIDATO',
-        sql,
-        sqlConfig
-      )
+    executeQuery(
+      'SELECT C.NOME AS NOME, A.ALUNO AS ID FROM PESSOA AS P INNER JOIN CANDIDATO AS C ON C.PESSOA = P.PESSOA INNER JOIN ALUNO AS A ON A.CANDIDATO = C.CANDIDATO',
+      sql,
+      sqlConfig,
+      result => {
+        resolve(result)
+      }
     )
   })
 }
 
 function getEmployees (sql, sqlConfig) {
   return new Promise(function (resolve, reject) {
-    resolve(
-      executeQuery(
-        'SELECT F.NOME AS NOME, P.PESSOA AS ID, F.PROFISSAO AS PROFISSAO  FROM PESSOA AS P INNER JOIN FUNCIONARIO AS F on F.PESSOA = P.PESSOA',
-        sql,
-        sqlConfig
-      )
+    executeQuery(
+      'SELECT F.NOME AS NOME, P.PESSOA AS ID, F.PROFISSAO AS PROFISSAO  FROM PESSOA AS P INNER JOIN FUNCIONARIO AS F on F.PESSOA = P.PESSOA',
+      sql,
+      sqlConfig,
+      result => {
+        resolve(result)
+      }
     )
   })
 }
 
-async function executeQuery (query, sql, sqlConfig) {
+function executeQuery (query, sql, sqlConfig, callback) {
   try {
-    let pool = await sql.connect(sqlConfig)
-    let result = await pool.request().query(query)
-    sql.close()
-    return result
+    let poolPromise = new Promise(function (resolve, reject) {
+      resolve(sql.connect(sqlConfig))
+    })
+
+    poolPromise.then(pool => {
+      let poolRequestPromise = new Promise(function (resolve, reject) {
+        resolve(pool.request().query(query))
+      })
+
+      poolRequestPromise.then(resultQuery => {
+        sql.close()
+        callback(resultQuery)
+      })
+    })
   } catch (err) {
     sql.close()
     return err
