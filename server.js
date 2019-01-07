@@ -59,6 +59,18 @@ function executeQueryStudents () {
   })
 }
 
+app.post('/api/attendance', function (request, response) {
+  executeQueryAddAttendace(request.body).then(function (result) {
+    response.json(result.recordsets)
+  })
+})
+
+function executeQueryAddAttendace (params) {
+  return new Promise(function (resolve, reject) {
+    resolve(addAttendance(params, sql, sqlConfig))
+  })
+}
+
 require('cf-deployment-tracker-client').track()
 
 function addAttendance (params, sql, sqlConfig) {
